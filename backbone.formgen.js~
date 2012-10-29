@@ -1,0 +1,371 @@
+(function (){
+
+/*
+Rendering loop
+*/
+
+// http://paulirish.com/2011/requestanimationframe-for-smart-animating/
+window.requestAnimFrame = (function(){
+    return  window.requestAnimationFrame       || 
+    window.webkitRequestAnimationFrame || 
+    window.mozRequestAnimationFrame    || 
+    window.oRequestAnimationFrame      || 
+    window.msRequestAnimationFrame     || 
+    function(/* function */ callback, /* DOMElement */ element){
+        window.setTimeout(callback, 1000 / 60);
+    };
+})();
+
+(function loop() {
+    $(window).trigger('requestAnimEvent');
+    requestAnimFrame(loop);
+})();
+
+/*
+main namespace and plugin setup
+*/
+window.B2DPLAYGROUND = {};
+
+var PG = window.B2DPLAYGROUND;
+
+PG.GenericModel = Backbone.Model.extend({
+//    defaults: {
+//    },
+//    initialize: function (){
+//    },
+//    validate: function (attributes){
+//    }
+});
+
+PG.shapes = occamsrazor();
+PG.editor = occamsrazor();
+PG.drawer = occamsrazor();
+PG.physicEngine = occamsrazor();
+
+// canvas wrapper
+
+var CanvasLayer = function(node, width, height, scale){
+    this.canvas = node;
+    this.width = width;
+    this.height = height;
+    this.scale = scale;
+    this.canvas.height = this.height * scale;
+    this.canvas.width = this.width * scale;
+    this.ctx = this.canvas.getContext("2d");
+    // this.offsetx = 0;
+    // this.offsety = 0;
+};
+
+/*
+* utilities
+*/
+
+PG.form2obj = function ($node){
+    var converters = {}, obj= {},
+        $inputs = $node.find(':input');
+    
+    converters.float = function (x){
+        return parseFloat(x);
+    };
+    converters.string = function (x){
+        return x;
+    };
+    converters.boolean = function (x){
+        return x.toLowerCase() === 'true';
+    };
+
+    $inputs.each(function (){
+        var $input = $(this),
+            name = $input.attr('name'),
+            data_converter = converters[$input.data('type')] || converters['string'];
+            obj[name] = data_converter($input.val());
+    });
+    return obj;
+
+};
+
+
+/*
+generic collection
+*/
+
+var Collection = Backbone.Collection.extend({
+    model:PG.GenericModel,
+    localStorage: new Backbone.LocalStorage("backbone-formgen"),
+//    url : "/data/stuff",
+    addcanvas: function (id){
+        console.log('add');
+        // add an offscreen canvas
+        this.offscreen[id] = window.document.createElement('canvas');
+    },
+    removecanvas: function (id){
+        // remove an offscreen canvas
+        delete this.offscreen[id];
+    },
+    initialize: function(){
+        this.offscreen = {};
+        this.on('destroy', this.delete_from_collection, this);
+        this.on('add', this.add_from_collection, this);
+        this.on('reset', this.reset_collection, this);
+    },
+    delete_from_collection : function (obj){
+        this.removecanvas(obj.id);
+        this.remove(obj);
+    },
+    add_from_collection : function (obj){
+        this.addcanvas(obj.id);
+    },
+    reset_collection : function (){
+        var that = this;
+        this.each(function (obj){
+            that.addcanvas(obj.id);
+        });
+    }
+});
+
+
+var collection = new Collection();
+//PG.collection = collection;
+
+/*
+canvas view (main app)
+*/
+var CanvasView = Backbone.View.extend({
+    CANVAS_HEIGHT : 14,
+    CANVAS_WIDTH : 18,
+    SCALE : 30,
+    debug : false,
+    physic: false,
+    el: $("#main"),
+    events: {
+          "click .play": "play",
+          "click .stop": "stop"
+    },
+    play: function (){
+        // init box2d
+        var b2World = Box2D.Dynamics.b2World,
+            b2Vec2 = Box2D.Common.Math.b2Vec2,
+            b2DebugDraw = Box2D.Dynamics.b2DebugDraw,
+            world;
+
+        // creating world
+        this.world = new b2World(
+            new b2Vec2(0, 10)    //gravity
+            , false                 //allow sleep
+        );
+        
+        if (this.debug) {
+            var debugDraw = new b2DebugDraw();
+            debugDraw.SetSprite(this.ctx);
+            debugDraw.SetDrawScale(30.0);
+            debugDraw.SetFillAlpha(0.3);
+            debugDraw.SetLineThickness(1.0);
+            debugDraw.SetFlags(b2DebugDraw.e_shapeBit | b2DebugDraw.e_jointBit);
+            this.world.SetDebugDraw(debugDraw);
+        }
+
+        world = this.world
+        // load objects
+        collection.each(function (element, index){
+            PG.physicEngine(element).add(world);
+        });
+        this.$el.addClass('play')
+        this.physic = true;
+    },
+    stop: function (){
+        this.world = null;
+        this.$el.removeClass('play');
+        this.physic = false;
+    },
+    updateworld: function (){
+//TODO setting correctly the time interval
+        var world=this.world,
+            positions = {},
+            b, 
+            stepRate = 1 / 60;
+        world.Step(stepRate, 10, 10);
+        world.ClearForces();    
+
+        for (var b = world.GetBodyList(); b; b = b.m_next) {
+            if (b.IsActive() && typeof b.GetUserData() !== 'undefined' && b.GetUserData() != null) {
+                positions[b.GetUserData()] = {
+                    x: b.GetPosition().x, 
+                    y: b.GetPosition().y, 
+                    angle: b.GetAngle(), 
+                    center: {
+                       x: b.GetWorldCenter().x, 
+                       y: b.GetWorldCenter().y
+                    }
+                }
+            }
+        }
+        
+        return positions;
+    },
+    initialize: function() {
+
+        // setup the canvas
+        var canvas = this.$el.find('#box2d-flipper').get(0);
+
+        this.canvasLayer = new CanvasLayer(canvas, this.CANVAS_HEIGHT, this.CANVAS_WIDTH, this.SCALE);
+
+//        this.canvas.height = this.CANVAS_HEIGHT;
+//        this.canvas.width = this.CANVAS_WIDTH;
+
+//        this.ctx = this.canvas.getContext("2d");
+
+        var that = this;
+        $(window).on('requestAnimEvent', function (){
+            that.render();
+        });
+
+//        // do nothing in the event handler except canceling the event
+//        this.canvas.ondragstart = function(e) {
+//            if (e && e.preventDefault) { e.preventDefault(); }
+//            if (e && e.stopPropagation) { e.stopPropagation(); }
+//            return false;
+//        }
+
+//        // do nothing in the event handler except canceling the event
+//        this.canvas.onselectstart = function(e) {
+//            if (e && e.preventDefault) { e.preventDefault(); }
+//            if (e && e.stopPropagation) { e.stopPropagation(); }
+//            return false;
+//        }
+
+
+        $(this.canvasLayer.canvas).click(function (evt){
+            var rect = this.getBoundingClientRect(),
+                drawer,
+                posx = evt.clientX - rect.left,
+                posy = evt.clientY - rect.top,
+                obj, i;
+            i = collection.length;
+            for (; i > 0; i--){
+                obj = collection.toArray()[i-1];
+                drawer = PG.drawer(obj);
+                if(drawer.isAt(posx, posy, that.canvasLayer)){
+                    console.log(obj);
+                    break;
+                }
+            }
+            return false;
+              
+       });
+    },
+    render: function() {
+        //console.log('render');
+        var modelView,
+            node,
+            positions,
+            $el = this.$el,
+            canvasLayer = this.canvasLayer,
+//            SCALE = this.SCALE,
+            physic = this.physic;
+
+        
+        if (physic){
+           positions = this.updateworld()
+        }
+
+        if (this.debug) {
+            world.DrawDebugData();
+        }
+        else {
+            canvasLayer.ctx.clearRect(0, 0, this.canvasLayer.canvas.width, this.canvasLayer.canvas.height);
+
+            collection.each(function (element, index){
+                var pos, x, y, angle;
+                if (! physic){
+                    x = element.get('start_x');
+                    y = element.get('start_y');
+                    angle = element.get('start_angle');
+                }
+                else {
+                    pos = positions[element.id]
+                    x = pos.x;
+                    y = pos.y;
+                    angle = pos.angle;
+                }
+
+                canvasLayer.ctx.save();
+                canvasLayer.ctx.translate(x * canvasLayer.scale, y * canvasLayer.scale);
+                canvasLayer.ctx.rotate(angle);
+
+//                canvasLayer.ctx.transform(Math.cos(angle),Math.sin(angle), -1*Math.sin(angle), Math.cos(angle), x * canvasLayer.scale, y * canvasLayer.scale);
+            
+                PG.drawer(element).render(canvasLayer);
+
+                canvasLayer.ctx.restore();
+
+            });
+        }
+        return this;
+    }
+});
+
+
+
+/*
+edit view
+*/
+var EditView = Backbone.View.extend({
+    el: $("#main"),
+//    events: {
+//          "click .add": "add"
+//    },
+//    add: function (){
+//        var obj = new GenericModel();
+//        collection.add(obj);
+//        obj.save();
+//        this.render();
+//    },
+    initialize: function() {
+        var shapes =  PG.shapes.all()
+            addnode = this.$el.find('.additems');
+
+        // setup add panel
+        _.each(shapes, function (obj){
+            $('<input type="button" value="' + obj.shape + '"/>')
+            .click(function (){
+                var model = new PG.GenericModel(obj);
+                collection.add(model);
+                model.save();
+            })
+            .appendTo(addnode);
+        });
+        //setup events        
+        collection.on('reset', this.render, this);
+        collection.on('remove', this.render, this);
+        collection.on('add', this.render, this);
+//        collection.on('change', this.render, this);
+    },
+    render: function() {
+        //console.log('render');
+        var modelView, node,
+            $editnode = this.$el.find('.edititems');
+            
+        $editnode.empty();
+        collection.each(function (element, index){
+            node = $('<div />').appendTo($editnode);
+            var modelView = PG.editor(element).getView(node);
+            modelView.render();
+        });
+        return this;
+    }
+});
+
+PG.start = function (){
+    var canvasview = new CanvasView();
+    var editview = new EditView();
+
+    collection.fetch();
+};
+
+
+}());
+
+
+
+
+
