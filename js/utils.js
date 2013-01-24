@@ -1,8 +1,8 @@
-/*
-utility module for b2dplayground
-*/
+var app = app || {};
+app.utilities = app.utilities || {};
 
-(function (util){
+(function (){
+'use strict';
 
 /*
 Rendering loop
@@ -28,7 +28,7 @@ window.requestAnimFrame = (function(){
 
 // canvas layer
 
-util.CanvasLayer = function(node, width, height, scale){
+app.utilities.CanvasLayer = function(node, width, height, scale){
     this.canvas = node;
     this.width = width;
     this.height = height;
@@ -40,7 +40,7 @@ util.CanvasLayer = function(node, width, height, scale){
     // this.offsety = 0;
 };
 
-util.CanvasLayer.prototype.clear = function (){
+app.utilities.CanvasLayer.prototype.clear = function (){
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
 };
@@ -49,12 +49,12 @@ util.CanvasLayer.prototype.clear = function (){
 // Point
 //
 
-util.Point = function (x, y){
+app.utilities.Point = function (x, y){
     this.x = x;
     this.y = y;
 };
 
-util.Point.prototype.rotate = function (angle){
+app.utilities.Point.prototype.rotate = function (angle){
     var x, y;
     x = this.x*Math.cos(angle) - this.y * Math.sin(angle);
     y = this.x*Math.sin(angle) + this.y * Math.cos(angle);
@@ -63,13 +63,13 @@ util.Point.prototype.rotate = function (angle){
     return this;
 };
 
-util.Point.prototype.translate = function (x, y){
+app.utilities.Point.prototype.translate = function (x, y){
     this.x = this.x + x;
     this.y = this.y + y;
     return this;
 };
 
-util.Point.prototype.distanceFrom = function (x, y){
+app.utilities.Point.prototype.distanceFrom = function (x, y){
     var dx = this.x - x, 
         dy = this.y - y;
     return Math.sqrt(dx*dx + dy*dy);
@@ -80,7 +80,7 @@ util.Point.prototype.distanceFrom = function (x, y){
 * form 2 object
 */
 
-util.form2obj = function ($node){
+app.utilities.form2obj = function ($node){
     var converters = {}, obj= {},
         $inputs = $node.find(':input');
     
@@ -104,5 +104,5 @@ util.form2obj = function ($node){
 };
 
 
-}(window.B2DPLAYGROUND.utilities));
+}());
 

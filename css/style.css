@@ -1,9 +1,10 @@
-#canvasedit{
+#edit,
+#editcanvas{
     float: left;
 }
-.edititems{
-    float: left;
-}
+/*.edititems{*/
+/*    float: left;*/
+/*}*/
 .form-horizontal{
     margin:10px;
     width: 160px;
@@ -36,7 +37,14 @@
 .startplay #play{
     display: block;
 }
-.startplay #edit{
+
+#add{
+    clear: both;
+}
+
+.startplay #add,
+.startplay #edit,
+.startplay #editcanvas{
     display: none;
 }
 
@@ -90,3 +98,13 @@ canvas{
     margin-left:10px;
 }
 
+.stop.btn{
+    display: none;
+}
+.play .stop.btn{
+    display: block;
+}
+
+.play .play.btn{
+    display: none;
+}
